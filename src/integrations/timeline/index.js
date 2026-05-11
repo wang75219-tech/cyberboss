@@ -127,13 +127,6 @@ function runTimelineCommand(binPath, args, extraEnv = {}, options = {}) {
 }
 
 function buildTimelineSpawnSpec(binPath, args = []) {
-  if (IS_WINDOWS) {
-    return {
-      command: "cmd.exe",
-      args: ["/d", "/s", "/c", buildWindowsNodeCommand(process.execPath, binPath, args)],
-    };
-  }
-
   return {
     command: process.execPath,
     args: [binPath, ...args],

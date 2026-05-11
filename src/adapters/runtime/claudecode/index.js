@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 const os = require("os");
 const { ClaudeCodeProcessClient } = require("./process-client");
 const { mapClaudeCodeMessageToRuntimeEvent } = require("./events");
@@ -7,17 +8,27 @@ const { SessionStore } = require("../codex/session-store");
 const { buildOpeningTurnText, buildInstructionRefreshText } = require("../shared-instructions");
 const { ClaudeCodeIpcServer } = require("./ipc-server");
 const CLAUDE_RESUME_SESSION_TIMEOUT_MS = 8000;
+const AUTO_COMPACT_SIZE_THRESHOLD = 30 * 1024;
+const AUTO_COMPACT_COOLDOWN_MS = 30 * 60 * 1000;
+
+function getClaudeProjectDir(workspaceRoot) {
+  const name = String(workspaceRoot).replace(/[\\\/:]/g, "-");
+  return path.join(os.homedir(), ".claude", "projects", name);
+}
+
+function getSessionFilePath(workspaceRoot, sessionId) {
+  return path.join(getClaudeProjectDir(workspaceRoot), `${sessionId}.jsonl`);
+}
 
 function createClaudeCodeRuntimeAdapter(config) {
   const sessionStore = new SessionStore({ filePath: config.sessionsFile, runtimeId: "claudecode" });
   const clientsByWorkspace = new Map();
   const pendingApprovals = new Map();
   let globalListener = null;
-  const ipcSocketPath = path.join(
-    config.stateDir || path.join(os.homedir(), ".cyberboss"),
-    "claudecode-runtime.sock",
-  );
-  const ipcServer = new ClaudeCodeIpcServer({ socketPath: ipcSocketPath });
+  let compactInProgress = false;
+  let lastCompactTime = 0;
+  const ipcStateDir = config.stateDir || path.join(os.homedir(), ".cyberboss");
+  const ipcServer = new ClaudeCodeIpcServer({ stateDir: ipcStateDir });
 
   ipcServer.on("clientMessage", (msg) => {
     if (msg?.type === "sendUserMessage" && msg?.workspaceRoot) {
@@ -90,6 +101,26 @@ function createClaudeCodeRuntimeAdapter(config) {
       if (mapped?.type === "runtime.turn.failed") {
         clientsByWorkspace.delete(workspaceRoot);
       }
+      if (event.type === "turn.completed") {
+        if (compactInProgress) {
+          compactInProgress = false;
+          lastCompactTime = Date.now();
+        } else {
+          const sessionId = client.sessionId;
+          if (sessionId && (Date.now() - lastCompactTime > AUTO_COMPACT_COOLDOWN_MS)) {
+            const filePath = getSessionFilePath(workspaceRoot, sessionId);
+            try {
+              const stat = fs.statSync(filePath);
+              if (stat.size > AUTO_COMPACT_SIZE_THRESHOLD) {
+                compactInProgress = true;
+                console.log(`[claudecode-runtime] auto-compacting session ${sessionId} (${(stat.size / 1024).toFixed(1)}KB)`);
+                client.sendUserMessage({ text: "/compact", threadId: sessionId })
+                  .catch((err) => console.error(`[claudecode-runtime] auto-compact error: ${err.message || String(err)}`));
+              }
+            } catch {}
+          }
+        }
+      }
       if (mapped && globalListener) {
         globalListener(mapped, raw);
       }
@@ -140,6 +171,8 @@ function createClaudeCodeRuntimeAdapter(config) {
     }
     await client.close();
     clientsByWorkspace.delete(normalizedWorkspaceRoot);
+    compactInProgress = false;
+    lastCompactTime = 0;
     for (const [requestId, candidateWorkspaceRoot] of pendingApprovals.entries()) {
       if (candidateWorkspaceRoot === normalizedWorkspaceRoot) {
         pendingApprovals.delete(requestId);
@@ -153,7 +186,7 @@ function createClaudeCodeRuntimeAdapter(config) {
         kind: "runtime",
         command: config.claudeCommand || "claude",
         sessionsFile: config.sessionsFile,
-        ipcSocketPath,
+        ipcPort: ipcServer.getPort(),
       };
     },
     onEvent(listener) {
@@ -169,6 +202,12 @@ function createClaudeCodeRuntimeAdapter(config) {
     },
     getSessionStore() {
       return sessionStore;
+    },
+    getTurnCapabilities() {
+      return {
+        nativeImageInput: false,
+        toolImageRead: false,
+      };
     },
     async initialize() {
       ipcServer.start();
@@ -247,7 +286,10 @@ function createClaudeCodeRuntimeAdapter(config) {
       await client.sendUserMessage({ text: refreshText, threadId: activeThreadId });
       return { threadId: activeThreadId };
     },
-    async sendTextTurn({ bindingKey, workspaceRoot, text, metadata = {}, model = "" }) {
+    async sendTextTurn(args) {
+      return this.sendTurn(args);
+    },
+    async sendTurn({ bindingKey, workspaceRoot, text, metadata = {}, model = "" }) {
       let threadId = sessionStore.getThreadIdForWorkspace(bindingKey, workspaceRoot);
       if (!threadId) {
         sessionStore.clearThreadIdForWorkspace(bindingKey, workspaceRoot);

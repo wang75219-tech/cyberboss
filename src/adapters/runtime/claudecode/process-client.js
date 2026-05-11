@@ -309,16 +309,24 @@ class ClaudeCodeProcessClient {
       ]);
     }
     if (this.child && !this.child.killed) {
-      this.child.kill("SIGTERM");
-      await Promise.race([
-        new Promise((resolve) => setTimeout(resolve, 3000)),
-        new Promise((resolve) => this.child.once("close", resolve)),
-      ]);
+      if (process.platform === "win32") {
+        await windowsKill(this.child.pid);
+      } else {
+        this.child.kill("SIGTERM");
+        await Promise.race([
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+          new Promise((resolve) => this.child.once("close", resolve)),
+        ]);
+      }
     }
     if (this.child && !this.child.killed) {
-      this.child.kill("SIGKILL");
+      if (process.platform === "win32") {
+        await windowsKill(this.child.pid);
+      } else {
+        this.child.kill("SIGKILL");
+      }
       await Promise.race([
-        new Promise((resolve) => setTimeout(resolve, 1000)),
+        new Promise((resolve) => setTimeout(resolve, 2000)),
         new Promise((resolve) => this.child.once("close", resolve)),
       ]);
     }
@@ -404,4 +412,12 @@ module.exports = { ClaudeCodeProcessClient };
 
 function isPendingThreadId(threadId) {
   return /^pending-\d+$/u.test(String(threadId || "").trim());
+}
+
+function windowsKill(pid) {
+  return new Promise((resolve) => {
+    const { exec } = require("child_process");
+    exec(`taskkill /F /T /PID ${pid}`, { windowsHide: true, timeout: 5000 }, () => resolve());
+    setTimeout(resolve, 2000);
+  });
 }

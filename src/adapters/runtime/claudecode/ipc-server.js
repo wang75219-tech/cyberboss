@@ -1,24 +1,27 @@
 const net = require("net");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const { EventEmitter } = require("events");
 
+const IPC_PORT_FILE = "claudecode-runtime.port";
+
 class ClaudeCodeIpcServer extends EventEmitter {
-  constructor({ socketPath }) {
+  constructor({ socketPath, stateDir }) {
     super();
-    this.socketPath = socketPath;
-    this.tokenFile = `${socketPath}.token`;
+    this.stateDir = stateDir || path.join(os.homedir(), ".cyberboss");
+    this.portFile = path.join(this.stateDir, IPC_PORT_FILE);
     this.authToken = "";
     this.server = null;
     this.clients = new Set();
     this.authenticated = new Set();
+    this.port = 0;
   }
 
   start() {
     if (this.server) return;
     this.ensureDirectory();
-    this.removeStaleSocket();
     this.generateAuthToken();
 
     this.server = net.createServer((socket) => {
@@ -60,8 +63,13 @@ class ClaudeCodeIpcServer extends EventEmitter {
       });
     });
 
-    this.server.listen(this.socketPath, () => {
-      fs.chmodSync(this.socketPath, 0o600);
+    this.server.listen(0, "127.0.0.1", () => {
+      this.port = this.server.address().port;
+      try {
+        fs.writeFileSync(this.portFile, String(this.port), { mode: 0o600 });
+      } catch {
+        // ignore
+      }
     });
   }
 
@@ -76,27 +84,19 @@ class ClaudeCodeIpcServer extends EventEmitter {
     }
   }
 
-  ensureDirectory() {
-    const dir = path.dirname(this.socketPath);
-    fs.mkdirSync(dir, { recursive: true });
+  getPort() {
+    return this.port;
   }
 
-  removeStaleSocket() {
-    try {
-      const stat = fs.lstatSync(this.socketPath);
-      if (!stat.isSocket()) {
-        return;
-      }
-      fs.unlinkSync(this.socketPath);
-    } catch {
-      // ignore
-    }
+  ensureDirectory() {
+    fs.mkdirSync(this.stateDir, { recursive: true });
   }
 
   generateAuthToken() {
     this.authToken = crypto.randomBytes(32).toString("hex");
+    const tokenFile = path.join(this.stateDir, "claudecode-runtime.sock.token");
     try {
-      fs.writeFileSync(this.tokenFile, this.authToken, { mode: 0o600 });
+      fs.writeFileSync(tokenFile, this.authToken, { mode: 0o600 });
     } catch {
       // ignore
     }
@@ -104,7 +104,7 @@ class ClaudeCodeIpcServer extends EventEmitter {
 
   removeAuthToken() {
     try {
-      fs.unlinkSync(this.tokenFile);
+      fs.unlinkSync(path.join(this.stateDir, "claudecode-runtime.sock.token"));
     } catch {
       // ignore
     }
@@ -128,7 +128,11 @@ class ClaudeCodeIpcServer extends EventEmitter {
       this.server = null;
     }
 
-    this.removeStaleSocket();
+    try {
+      fs.unlinkSync(this.portFile);
+    } catch {
+      // ignore
+    }
     this.removeAuthToken();
   }
 }
