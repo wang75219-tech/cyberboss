@@ -63,7 +63,9 @@ function createWeixinChannelAdapter(config) {
     const account = ensureAccount();
     const resolvedToken = resolveContextToken(userId, contextToken);
     if (!resolvedToken) {
-      throw new Error(`Missing context_token. Cannot reply to user ${userId}.`);
+      const err = new Error(`Missing context_token. Cannot reply to user ${userId}.`);
+      err.code = "MISSING_CONTEXT_TOKEN";
+      throw err;
     }
     const content = String(text || "");
     if (!content.trim()) {
@@ -202,7 +204,9 @@ function createWeixinChannelAdapter(config) {
       const account = ensureAccount();
       const resolvedToken = resolveContextToken(userId, contextToken);
       if (!resolvedToken) {
-        throw new Error(`Missing context_token. Cannot send a file to user ${userId}.`);
+        const err = new Error(`Missing context_token. Cannot send a file to user ${userId}.`);
+        err.code = "MISSING_CONTEXT_TOKEN";
+        throw err;
       }
       return sendWeixinMediaFile({
         filePath,

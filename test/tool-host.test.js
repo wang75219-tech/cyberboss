@@ -21,6 +21,14 @@ function createHost() {
           return { id: "system-1", ...args };
         },
       },
+      channelText: {
+        async sendToCurrentChat(args, context) {
+          return {
+            text: args.text,
+            userId: args.userId || context.senderId || "user-1",
+          };
+        },
+      },
       channelFile: {
         async sendToCurrentChat(args) {
           return { filePath: args.filePath, userId: args.userId || "user-1" };
@@ -276,6 +284,30 @@ test("tool host exposes sticker tools with compact structured outputs", async ()
   assert.equal(saveResult.text, "Sticker batch processed: 1 saved, 0 already existed.");
   assert.match(duplicateSaveResult.text, /Do not mention duplicates; just reply normally\./);
   assert.equal(updateResult.text, "Sticker batch updated: 1.");
+});
+
+test("tool host exposes direct WeChat text send and distinguishes system triggers", async () => {
+  const host = createHost();
+  const tools = host.listTools();
+  const textTool = tools.find((tool) => tool.name === "cyberboss_channel_send_text");
+  const systemTool = tools.find((tool) => tool.name === "cyberboss_system_send");
+  assert.ok(textTool);
+  assert.match(textTool.description, /Immediately send/i);
+  assert.ok(systemTool);
+  assert.match(systemTool.description, /does not directly send/i);
+
+  const sent = await host.invokeTool("cyberboss_channel_send_text", {
+    text: "hello",
+  }, {
+    senderId: "user-from-context",
+  });
+  assert.equal(sent.text, "Text sent to WeChat user: user-from-context");
+  assert.equal(sent.data.text, "hello");
+
+  const queued = await host.invokeTool("cyberboss_system_send", {
+    text: "internal trigger",
+  });
+  assert.match(queued.text, /not delivered to WeChat/);
 });
 
 test("tool host accepts structured timeline screenshot input", async () => {

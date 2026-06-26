@@ -452,6 +452,7 @@ ${HOME}/.cyberboss
 - `cyberboss_timeline_serve`
 - `cyberboss_timeline_dev`
 - `cyberboss_timeline_screenshot`
+- `cyberboss_channel_send_text`
 - `cyberboss_channel_send_file`
 - `whereabouts_current_stay`
 - `whereabouts_recent_stays`

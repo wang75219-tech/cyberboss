@@ -118,8 +118,8 @@ const PROJECT_TOOLS = [
   },
   {
     name: "cyberboss_system_send",
-    description: "Queue an internal Cyberboss system trigger for the current bound workspace and chat.",
-    shortHint: "Queue an internal system message for the current workspace.",
+    description: "Queue an internal Cyberboss system trigger for later agent processing. This does not directly send a WeChat message; use cyberboss_channel_send_text when the user should see text now.",
+    shortHint: "Queue an internal trigger; not a direct WeChat send.",
     topics: ["system"],
     inputSchema: {
       type: "object",
@@ -134,7 +134,29 @@ const PROJECT_TOOLS = [
     async handler({ services, args, context }) {
       const result = services.system.queueMessage(args, context);
       return {
-        text: `System message queued: ${result.id}`,
+        text: `System trigger queued, not delivered to WeChat: ${result.id}`,
+        data: result,
+      };
+    },
+  },
+  {
+    name: "cyberboss_channel_send_text",
+    description: "Immediately send a text message to the current WeChat chat. Use this when the user should see the message now.",
+    shortHint: "Send text directly to the current WeChat user.",
+    topics: ["channel"],
+    inputSchema: {
+      type: "object",
+      required: ["text"],
+      properties: {
+        text: { type: "string" },
+        userId: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+    async handler({ services, args, context }) {
+      const result = await services.channelText.sendToCurrentChat(args, context);
+      return {
+        text: `Text sent to WeChat user: ${result.userId}`,
         data: result,
       };
     },

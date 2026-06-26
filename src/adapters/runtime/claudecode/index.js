@@ -8,7 +8,7 @@ const { SessionStore } = require("../codex/session-store");
 const { buildOpeningTurnText, buildInstructionRefreshText } = require("../shared-instructions");
 const { ClaudeCodeIpcServer } = require("./ipc-server");
 const CLAUDE_RESUME_SESSION_TIMEOUT_MS = 8000;
-const AUTO_COMPACT_SIZE_THRESHOLD = 30 * 1024;
+const AUTO_COMPACT_SIZE_THRESHOLD = 512 * 1024;
 const AUTO_COMPACT_COOLDOWN_MS = 30 * 60 * 1000;
 
 function getClaudeProjectDir(workspaceRoot) {

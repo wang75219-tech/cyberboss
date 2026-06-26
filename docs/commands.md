@@ -74,6 +74,7 @@ Models no longer use local capability CLI commands for diary, reminders, timelin
 Those capabilities are exposed as project-native structured tools:
 
 - `cyberboss_channel_send_file`
+- `cyberboss_channel_send_text`
 - `cyberboss_diary_append`
 - `cyberboss_reminder_create`
 - `cyberboss_system_send`

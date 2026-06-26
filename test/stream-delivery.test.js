@@ -330,6 +330,43 @@ test("plain weixin reply sends finalized item text even if earlier streaming tex
   });
 });
 
+test("plain weixin reply does not resend anonymous streaming text after finalized item text", async () => {
+  const { sent, streamDelivery } = createHarness();
+  streamDelivery.queueReplyTargetForThread("thread-4d", {
+    userId: "user-4d",
+    contextToken: "ctx-4d",
+    provider: "weixin",
+  });
+
+  await streamDelivery.handleRuntimeEvent({
+    type: "runtime.turn.started",
+    payload: { threadId: "thread-4d", turnId: "turn-4d" },
+  });
+  await streamDelivery.handleRuntimeEvent({
+    type: "runtime.reply.delta",
+    payload: { threadId: "thread-4d", turnId: "turn-4d", text: "第一句。第二句。第三句。" },
+  });
+  await streamDelivery.handleRuntimeEvent({
+    type: "runtime.reply.completed",
+    payload: {
+      threadId: "thread-4d",
+      turnId: "turn-4d",
+      itemId: "agent-message-4d",
+      text: "第一句。第二句。第三句。",
+    },
+  });
+  await streamDelivery.handleRuntimeEvent({
+    type: "runtime.turn.completed",
+    payload: { threadId: "thread-4d", turnId: "turn-4d" },
+  });
+
+  assert.deepEqual(sent, [{
+    userId: "user-4d",
+    text: "第一句。第二句。第三句。",
+    contextToken: "ctx-4d",
+  }]);
+});
+
 test("system send_message retries with the latest context token on ret=-2", async () => {
   const attempts = [];
   const { sent, streamDelivery } = createHarness({

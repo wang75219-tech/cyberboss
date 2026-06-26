@@ -202,7 +202,9 @@ async function getUpdates({ baseUrl, token, getUpdatesBuf = "", timeoutMs = DEFA
 
 async function sendText({ baseUrl, token, toUserId, text, contextToken, clientId }) {
   if (!String(contextToken || "").trim()) {
-    throw new Error("weixin sendText requires contextToken");
+    const err = new Error("weixin sendText requires contextToken");
+    err.code = "MISSING_CONTEXT_TOKEN";
+    throw err;
   }
   const itemList = [];
   if (String(text || "").trim()) {

@@ -575,12 +575,17 @@ function buildReplyText(state, { completedOnly }) {
 
 function collectPendingReplyDeliveries(state, { force }) {
   const pending = [];
+  const completedSourceTexts = collectCompletedReplySourceTexts(state);
   for (const itemId of state.itemOrder) {
     if (state.sentItemIds.has(itemId)) {
       continue;
     }
     const item = state.items.get(itemId);
     if (!item) {
+      continue;
+    }
+    if (force && !item.completed && isDuplicateStreamingItem(item, completedSourceTexts)) {
+      state.sentItemIds.add(itemId);
       continue;
     }
     const sourceText = resolvePlainReplySourceText(item, force);
@@ -600,6 +605,31 @@ function collectPendingReplyDeliveries(state, { force }) {
     pending.push({ itemId, kind: "plain", text: sanitizedText });
   }
   return pending;
+}
+
+function collectCompletedReplySourceTexts(state) {
+  const texts = [];
+  for (const itemId of state.itemOrder) {
+    const item = state.items.get(itemId);
+    const text = trimOuterBlankLines(item?.completedText || "");
+    if (item?.completed && text) {
+      texts.push(text);
+    }
+  }
+  return texts;
+}
+
+function isDuplicateStreamingItem(item, completedSourceTexts) {
+  const streamingText = trimOuterBlankLines(item?.currentText || "");
+  if (!streamingText || !Array.isArray(completedSourceTexts) || !completedSourceTexts.length) {
+    return false;
+  }
+  const normalizedStreamingText = normalizeComparableReplyText(streamingText);
+  return completedSourceTexts.some((text) => normalizeComparableReplyText(text) === normalizedStreamingText);
+}
+
+function normalizeComparableReplyText(text) {
+  return trimOuterBlankLines(markdownToPlainText(text)).replace(/\s+/g, " ");
 }
 
 function resolvePlainReplySourceText(item, force) {
@@ -840,13 +870,18 @@ function extractSystemActionJsonCandidate(text) {
 }
 
 function isSystemReplyContextFailure(error) {
+  if (error?.code === "MISSING_CONTEXT_TOKEN") {
+    return true;
+  }
   const message = String(error?.message || "");
   const ret = normalizeNumericErrorCode(error?.ret);
   const errcode = normalizeNumericErrorCode(error?.errcode);
   return ret === -2
     || errcode === -2
     || message.includes("sendMessage ret=-2")
-    || message.includes("errcode=-2");
+    || message.includes("errcode=-2")
+    || message.includes("Missing context_token")
+    || message.includes("requires contextToken");
 }
 
 function normalizeNumericErrorCode(value) {
